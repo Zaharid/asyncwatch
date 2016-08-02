@@ -54,14 +54,14 @@ def unpack_inotify_events(buffer):
     return events
 
 def parse_event_mask(mask):
-    if mask & constants.RETURN_FLAGS.IN_Q_OVERFLOW:
+    if mask & constants.RETURN_FLAGS.Q_OVERFLOW:
         raise OSError("inotify queue overflow")
-    if mask & constants.RETURN_FLAGS.IN_ISDIR:
+    if mask & constants.RETURN_FLAGS.ISDIR:
         is_dir = True
     else:
         is_dir = False
-    tps = (*constants.REAL_EVENTS, constants.RETURN_FLAGS.IN_UNMOUNT,
-            constants.RETURN_FLAGS.IN_IGNORED)
+    tps = (*constants.REAL_EVENTS, constants.RETURN_FLAGS.UNMOUNT,
+            constants.RETURN_FLAGS.IGNORED)
     try:
         tp = next(evt for evt in tps if evt & mask)
     except StopIteration as e:
@@ -131,13 +131,13 @@ class Monitor:
         else:
             mask = events
         if exclude_unlink:
-            mask |= constants.WATCH_FLAGS.IN_EXCL_UNLINK
+            mask |= constants.WATCH_FLAGS.EXCL_UNLINK
         if not follow_symlinks:
-            mask |= constants.WATCH_FLAGS.IN_DONT_FOLLOW
+            mask |= constants.WATCH_FLAGS.DONT_FOLLOW
         if oneshot:
-            mask |= constants.WATCH_FLAGS.IN_ONESHOT
+            mask |= constants.WATCH_FLAGS.ONESHOT
         if not replace_existing:
-            mask |= constants.WATCH_FLAGS.IN_MASK_ADD
+            mask |= constants.WATCH_FLAGS.MASK_ADD
         if isinstance(filename, str):
            filename = filename.encode()
         #TODO: Use new path protocol when available

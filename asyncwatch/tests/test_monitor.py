@@ -18,7 +18,7 @@ def test_iter(tmpdir):
     p = Path(str(tmpdir))
     async def do_watch():
         count = 0
-        async for events in  watch(str(p), EVENTS.IN_CREATE):
+        async for events in  watch(str(p), EVENTS.CREATE):
             count += 1
             (p / str(count)).touch()
             if count == 5:
@@ -35,9 +35,9 @@ def test_iter(tmpdir):
 
 def test_context(tmpdir):
     async def do_watch():
-        monitor = watch(str(tmpdir), EVENTS.IN_DELETE, oneshot=True)
+        monitor = watch(str(tmpdir), EVENTS.DELETE, oneshot=True)
         async with monitor as events:
-            assert any(event.tp ==  EVENTS.IN_DELETE for event in
+            assert any(event.tp ==  EVENTS.DELETE for event in
                     events)
         with pytest.raises(OSError):
             os.fstat(monitor._fd)
@@ -59,7 +59,7 @@ def test_bad():
 
 def test_several(tmpdir):
     m = Monitor()
-    m.add_watch(str(tmpdir), (EVENTS.IN_ACCESS, EVENTS.IN_CREATE))
+    m.add_watch(str(tmpdir), (EVENTS.ACCESS, EVENTS.CREATE))
     async def main():
         tmpdir.mkdir('xxx')
         events = await m.next_events()
@@ -75,14 +75,14 @@ def test_interface(tmpdir):
         m.add_watch(1234, 0)
     p = Path(str(tmpdir))
     m.add_watch(p, 1)
-    m.add_watch(str(tmpdir), EVENTS.IN_CREATE)
-    m.add_watch(str(tmpdir), EVENTS.IN_DELETE_SELF,
+    m.add_watch(str(tmpdir), EVENTS.CREATE)
+    m.add_watch(str(tmpdir), EVENTS.DELETE_SELF,
             replace_existing=True)
     async def do_watch():
         async with m as events:
-            assert all(event.tp != EVENTS.IN_CREATE for event in
+            assert all(event.tp != EVENTS.CREATE for event in
                     events)
-            assert any(event.tp == EVENTS.IN_DELETE_SELF for event in
+            assert any(event.tp == EVENTS.DELETE_SELF for event in
                     events)
             print(events[0])
     async def main():

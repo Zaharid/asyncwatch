@@ -9,7 +9,16 @@ Installing
 -----------
 
 ````
-pip install asyncwatch
+conda install asyncwatch -c zigzah.com/conda-pkgs
+````
+
+
+Usage
+-----
+
+````python
+import curio
+
 ````
 
 Requirements
@@ -19,4 +28,18 @@ Requirements
 - Python >= 3.5
 - [Curio](https://github.com/dabeaz/curio)
 
+The tests require py.test.
+
+Rationale
+---------
+
+### Why curio?
+
+For fun mostly. Also it's significantly easier to play with than the
+alternatives and has the bits required for this project.
+
+### Why isn't it there a pip package?
+
+At this moment the curio in pip is out of date, so it's better to get
+it trough conda.
 

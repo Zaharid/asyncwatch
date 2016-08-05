@@ -82,6 +82,12 @@ Closed: done
 Done watching
 ````
 
+The `watch` function creates a `Monitor` object and calls its
+`add_watch` method, which mirrors closely
+[`inotify_add_watch`](http://man7.org/linux/man-pages/man2/inotify_add_watch.2.html).
+This object the supports both asyncronous iteration (continous
+watching) and asyncronous context managers (one off watching).
+
 Requirements
 -----------
 
@@ -115,3 +121,8 @@ alternatives and has the bits required for this project.
 At this moment the curio in pip is out of date, so it's better to get
 it trough conda.
 
+### Why does it return many events?
+
+It is not so easy to do otherwise with the inotify specification: even
+a oneoff watch can and does return several events. At this level of
+abstraction, the user has to iterate one extra time.

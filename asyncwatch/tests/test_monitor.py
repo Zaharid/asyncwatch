@@ -56,6 +56,8 @@ def test_bad():
     m = Monitor()
     with pytest.raises(OSError):
         m.add_watch('/', 123212313)
+    with pytest.raises(TypeError):
+        m.add_watch('/', None)
 
 def test_several(tmpdir):
     m = Monitor()
@@ -66,6 +68,44 @@ def test_several(tmpdir):
         assert any(event.name == 'xxx' for event in events)
         assert any(event.is_dir for event in events)
     curio.run(main())
+
+def test_symlinks(tmpdir):
+    m1 = Monitor()
+    m2 = Monitor()
+    root_path = Path(str(tmpdir))
+
+    watch_path = root_path / 'dir'
+    watch_path.mkdir()
+
+    f = watch_path / 'file'
+    f.touch()
+    link = watch_path / 'link'
+    link.symlink_to(f)
+
+    m1.add_watch(link, EVENTS.ALL_EVENTS,
+            follow_symlinks=False)
+    m2.add_watch(link, EVENTS.ALL_EVENTS)
+    async def do_watch_m1():
+        async with m1:
+            raise RuntimeError()
+
+    async def do_watch_m2(t):
+        async with m2:
+            await t.cancel()
+
+
+
+    async def main():
+        t1 = await curio.spawn(curio.timeout_after(2, do_watch_m1()))
+        t2 = await curio.spawn(curio.timeout_after(2, do_watch_m2(t1)))
+        with link.open('a') as wr:
+            wr.write("Hello")
+        await t2.join()
+        with pytest.raises(curio.TaskError):
+            await t1.join()
+
+
+    curio.run(main(), with_monitor=True)
 
 def test_interface(tmpdir):
     m = Monitor()

@@ -11,6 +11,7 @@ import struct
 from collections import Sequence, namedtuple
 from functools import reduce
 import operator
+import fnmatch
 import pathlib
 
 import curio
@@ -109,12 +110,22 @@ class Monitor:
         if self.error_empty and not self._watches:
             raise exceptions.NoMoreWatches()
         data = await self.stream.read()
-        forward_events = []
         events = unpack_inotify_events(data)
+        forward_events = []
         for event in events:
             if event.tp == constants.RETURN_FLAGS.IGNORED:
                 self._watches.pop(event.wd, None)
+            else:
+                watch = self._watches[event.wd]
+                if (watch.filter is not None and
+                    (not event.name or
+                     not fnmatch.fnmatch(event.name, watch.filter))
+                    ):
+                    continue
+
             forward_events.append(event)
+        if not forward_events:
+            forward_events = await self.next_events()
         return forward_events
 
     async def __aenter__(self):
@@ -180,8 +191,6 @@ class Monitor:
     def active_watches(self):
         """Return a copy of the active watches"""
         return self._watches.copy()
-
-
 
     def close(self):
         self._buffer.close()

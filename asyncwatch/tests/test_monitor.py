@@ -124,7 +124,6 @@ def test_interface(tmpdir):
                     events)
             assert any(event.tp == EVENTS.DELETE_SELF for event in
                     events)
-            print(events[0])
     async def main():
         t = await curio.spawn(do_watch())
         with (p/'xxx').open('a'):
@@ -133,6 +132,33 @@ def test_interface(tmpdir):
         p.rmdir()
         await t.join()
     curio.run(main())
+
+def test_filters(tmpdir):
+    s = str(tmpdir)
+    p = Path(s)
+    m = watch(s, EVENTS.ALL_EVENTS, filter="abc*d")
+    async def do_watch():
+        events = await m.next_events()
+        assert events
+        for event in events:
+            assert event.name == "abcXXd"
+
+    async def main():
+        t = await curio.spawn(curio.timeout_after(1,do_watch()))
+        (p/"xyz").touch()
+        (p/"abcXXd").touch()
+        await t.join()
+
+        (p/"xyz").touch()
+        #Cover the case where all the first events are filtered out
+        t = await curio.spawn(do_watch())
+        (p/"abcXXd").touch()
+        await t.join()
+
+
+    curio.run(main())
+
+
 
 def test_remove(tmpdir):
     s = str(tmpdir)

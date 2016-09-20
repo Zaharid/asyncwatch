@@ -41,7 +41,7 @@ def unpack_inotify_events(buffer):
         wd, mask, cookie, l = struct.unpack_from(fmt, buffer, offset=offset)
         offset += evt_head_size
         if l>0:
-            name = struct.unpack_from('%ds'%l, buffer, offset=evt_head_size)[0]
+            name = struct.unpack_from('%ds'%l, buffer, offset=offset)[0]
             name = name[:name.index(b'\0')].decode()
         else:
             name = None

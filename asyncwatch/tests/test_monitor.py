@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import curio
 
-from asyncwatch import Monitor, watch, EVENTS
+from asyncwatch import Monitor, watch, EVENTS, NoMoreWatches
 
 
 async def touch(p):
@@ -134,10 +134,41 @@ def test_interface(tmpdir):
         await t.join()
     curio.run(main())
 
+def test_remove(tmpdir):
+    s = str(tmpdir)
+    p = Path(s)
+    subpaths = []
+    m = Monitor(error_empty=True)
+    for i in '1234':
+        subpath = p/i
+        subpath.touch()
+        m.add_watch(subpath, EVENTS.DELETE_SELF)
+        subpaths.append(subpath)
 
+    assert(len(m._watches) == len(subpaths) == len(m.active_watches()))
+    wd = m.add_watch(p, EVENTS.DELETE_SELF)
 
+    it = iter(subpaths)
+    def delpath():
+        try:
+            next(it).unlink()
+        except StopIteration:
+            m.remove_watch(wd)
 
+    async def do_watch():
+        try:
+            async for events in m:
+                delpath()
+        except NoMoreWatches:
+            return
 
-
+    async def main():
+        t = await curio.spawn(curio.timeout_after(2, do_watch()))
+        delpath()
+        await t.join()
+    curio.run(main())
+    with pytest.raises(ValueError):
+        m.remove_watch(wd)
+    assert not m._watches
 
 

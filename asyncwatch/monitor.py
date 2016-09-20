@@ -8,7 +8,7 @@ Created on Sun Jun 26 18:34:29 2016
 """
 import errno
 import struct
-from collections import Sequence
+from collections import Sequence, namedtuple
 from functools import reduce
 import operator
 import pathlib
@@ -18,6 +18,7 @@ from curio import io
 
 from .inotify import lib as C
 from .inotify import ffi
+from . import exceptions
 from . import constants
 
 def errno_code():
@@ -36,7 +37,6 @@ def _add_flags(flags):
 
 def unpack_inotify_events(buffer):
     offset = 0
-    events = []
     while True:
         wd, mask, cookie, l = struct.unpack_from(fmt, buffer, offset=offset)
         offset += evt_head_size
@@ -46,12 +46,11 @@ def unpack_inotify_events(buffer):
         else:
             name = None
         offset += l
-        events.append(Event(wd, mask, cookie, name))
+        yield Event(wd, mask, cookie, name)
         if offset==len(buffer):
             break
         if offset > len(buffer):
             raise ValueError("Corrupted inotify event")
-    return events
 
 def parse_event_mask(mask):
     if mask & constants.RETURN_FLAGS.Q_OVERFLOW:
@@ -69,9 +68,6 @@ def parse_event_mask(mask):
     return tp, is_dir
 
 
-
-
-
 class Event:
     def __init__(self, wd, mask, cookie, name):
         self.wd = wd
@@ -87,10 +83,18 @@ class Event:
     def __str__(self):
         return '%s: %s'% (self.tp, self.name if self.name else '.')
 
+    def __repr__(self):
+        return "<%s(tp=%r, name=%r)>" % (self.__class__.__qualname__,
+                self.tp, self.name)
 
+WatchSpec =  namedtuple('WatchSpec', ('name', 'mask', 'filter'))
 
 class Monitor:
-    def __init__(self):
+    def __init__(self, error_empty=False):
+        """...
+        error_empty: If the watch count reaches 0 while waiting for
+        events, raise an exception.
+        """
         self._fd = C.inotify_init1(0)
         if self._fd < 0:
             raise OSError("Could not initialize inotify: error %s"
@@ -98,10 +102,20 @@ class Monitor:
         self._buffer = open(self._fd, 'rb')
         #Makes buffer nonblocking
         self.stream = io.FileStream(self._buffer)
+        self._watches = {}
+        self.error_empty = error_empty
 
     async def next_events(self):
+        if self.error_empty and not self._watches:
+            raise exceptions.NoMoreWatches()
         data = await self.stream.read()
-        return unpack_inotify_events(data)
+        forward_events = []
+        events = unpack_inotify_events(data)
+        for event in events:
+            if event.tp == constants.RETURN_FLAGS.IGNORED:
+                self._watches.pop(event.wd, None)
+            forward_events.append(event)
+        return forward_events
 
     async def __aenter__(self):
         return await self.next_events()
@@ -113,13 +127,13 @@ class Monitor:
         return self
 
     async def __anext__(self):
-        return (await self.next_events())
+        return await self.next_events()
 
 
     def add_watch(self, filename, events, *, exclude_unlink=False,
                   follow_symlinks=True,
                   oneshot=False,
-                  replace_existing=False):
+                  replace_existing=False, filter=None):
         """Watch the filename for the given events. The defaults differ from
         inotify in that if a filename is already being watched, this call will
         add the new events instead of replacing them.
@@ -149,6 +163,24 @@ class Monitor:
         if wd == -1:
             raise OSError("Could not add watch. Error: %s"%
                     errno_code())
+        watch_spec = WatchSpec(filename, mask, filter)
+        self._watches[wd] = watch_spec
+        return wd
+
+    def remove_watch(self, wd):
+        if wd not in self._watches:
+            raise ValueError("Invalid watch descriptor")
+        val = C.inotify_rm_watch(self._fd, wd)
+        if val != 0:
+            raise OSError("Could not remove watch. Error: %s"
+                    % errno_code()
+                )
+        del self._watches[wd]
+
+    def active_watches(self):
+        """Return a copy of the active watches"""
+        return self._watches.copy()
+
 
 
     def close(self):
@@ -159,7 +191,7 @@ class Monitor:
 
 
 def watch(*args, **kwargs):
-    m = Monitor()
+    m = Monitor(error_empty=True)
     m.add_watch(*args, **kwargs)
     return m
 

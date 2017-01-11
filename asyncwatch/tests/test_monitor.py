@@ -18,7 +18,7 @@ def test_iter(tmpdir):
     p = Path(str(tmpdir))
     async def do_watch():
         count = 0
-        async for events in  watch(str(p), EVENTS.CREATE):
+        async for events in  watch(str(p), EVENTS.ALL_EVENTS):
             count += 1
             (p / str(count)).touch()
             if count == 5:

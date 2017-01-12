@@ -7,12 +7,12 @@ source:
 
 requirements:
     build:
-      - python >=3.5
+      - python
       - curio
       - setuptools
       - cffi
     run:
-      - python >=3.5
+      - python
       - curio
       - cffi
 

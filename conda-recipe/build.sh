@@ -1,3 +1,2 @@
 #!/bin/bash
-
-python setup.py install
+pip install --no-deps --no-binary --ignore-installed .

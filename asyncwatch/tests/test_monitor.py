@@ -52,6 +52,19 @@ def test_context(tmpdir):
     curio.run(main())
 
 
+def kernel_version_tuple():
+    import platform
+    def maybe_int(x):
+        try:
+            return int(x)
+        except:
+            return x
+    return tuple(maybe_int(x) for x in platform.release().split('.'))
+
+
+@pytest.mark.xfail(kernel_version_tuple() < (4,2), 
+        reason="Old kernel version. See: "
+        "https://lkml.org/lkml/2015/6/30/472")
 def test_bad():
     m = Monitor()
     with pytest.raises(OSError):

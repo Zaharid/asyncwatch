@@ -42,12 +42,11 @@ class Monitor:
         events, raise an exception. This is useful to avoid accidental
         deadlocks.
         """
-        self._fd = C.inotify_init1(0)
+        self._fd = C.inotify_init1(os.O_CLOEXEC)
         if self._fd < 0:
-            raise OSError("Could not initialize inotify: error %s"
-                          % errno_code())
+            raise OSError(f"Could not initialize inotify: error {errno_code()}")
         self._buffer = open(self._fd, 'rb')
-        #Makes buffer nonblocking
+        #Makes buffer nonblocking already
         self.stream = io.FileStream(self._buffer)
         self._watches = {}
         self.error_empty = error_empty

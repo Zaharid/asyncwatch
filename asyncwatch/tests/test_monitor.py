@@ -9,16 +9,16 @@ from asyncwatch import Monitor, watch, EVENTS, NoMoreWatches
 
 async def touch(p):
     new_path = p/'xxx'
-    async with curio.aopen(str(new_path), 'a') as f:
+    async with curio.aopen(new_path, 'a'):
         pass
     return new_path
 
 
 def test_iter(tmpdir):
-    p = Path(str(tmpdir))
+    p = Path(tmpdir)
     async def do_watch():
         count = 0
-        async for events in  watch(str(p), EVENTS.ALL_EVENTS):
+        async for event in  watch(p, EVENTS.CLOSE):
             count += 1
             (p / str(count)).touch()
             if count == 5:
@@ -36,9 +36,8 @@ def test_iter(tmpdir):
 def test_context(tmpdir):
     async def do_watch():
         monitor = watch(str(tmpdir), EVENTS.DELETE, oneshot=True)
-        async with monitor as events:
-            assert any(event.tp ==  EVENTS.DELETE for event in
-                    events)
+        async with monitor as event:
+            assert event.tp ==  EVENTS.DELETE
         with pytest.raises(OSError):
             os.fstat(monitor._fd)
 
@@ -46,7 +45,7 @@ def test_context(tmpdir):
         t = await curio.spawn(do_watch())
         np = await touch(tmpdir)
         #Ugly!
-        Path(str(np)).unlink()
+        Path(np).unlink()
         await t.join()
 
     curio.run(main())
@@ -62,7 +61,7 @@ def kernel_version_tuple():
     return tuple(maybe_int(x) for x in platform.release().split('.'))
 
 
-@pytest.mark.xfail(kernel_version_tuple() < (4,2), 
+@pytest.mark.xfail(kernel_version_tuple() < (4,2),
         reason="Old kernel version. See: "
         "https://lkml.org/lkml/2015/6/30/472")
 def test_bad():
@@ -74,18 +73,18 @@ def test_bad():
 
 def test_several(tmpdir):
     m = Monitor()
-    m.add_watch(str(tmpdir), (EVENTS.ACCESS, EVENTS.CREATE))
+    m.add_watch(tmpdir, (EVENTS.ACCESS, EVENTS.CREATE))
     async def main():
         tmpdir.mkdir('xxx')
-        events = await m.next_events()
-        assert any(event.name == 'xxx' for event in events)
-        assert any(event.is_dir for event in events)
+        async for event in m.next_events():
+            assert event.name == 'xxx'
+            assert event.is_dir
     curio.run(main())
 
 def test_symlinks(tmpdir):
     m1 = Monitor()
     m2 = Monitor()
-    root_path = Path(str(tmpdir))
+    root_path = Path(tmpdir)
 
     watch_path = root_path / 'dir'
     watch_path.mkdir()
@@ -123,20 +122,19 @@ def test_symlinks(tmpdir):
 def test_interface(tmpdir):
     m = Monitor()
     with pytest.raises(TypeError):
-        m.add_watch(str(tmpdir), "xxxx")
+        m.add_watch(tmpdir, "xxxx")
     with pytest.raises(TypeError):
         m.add_watch(1234, 0)
-    p = Path(str(tmpdir))
+    p = Path(tmpdir)
     m.add_watch(p, 1)
-    m.add_watch(str(tmpdir), EVENTS.CREATE)
-    m.add_watch(str(tmpdir), EVENTS.DELETE_SELF,
+    m.add_watch(tmpdir, EVENTS.CREATE)
+    m.add_watch(tmpdir, EVENTS.DELETE_SELF,
             replace_existing=True)
     async def do_watch():
-        async with m as events:
-            assert all(event.tp != EVENTS.CREATE for event in
-                    events)
-            assert any(event.tp == EVENTS.DELETE_SELF for event in
-                    events)
+        async for event in m.next_events():
+            assert event.tp != EVENTS.CREATE
+
+
     async def main():
         t = await curio.spawn(do_watch())
         with (p/'xxx').open('a'):
@@ -151,9 +149,7 @@ def test_filters(tmpdir):
     p = Path(s)
     m = watch(s, EVENTS.ALL_EVENTS, filter="abc*d")
     async def do_watch():
-        events = await m.next_events()
-        assert events
-        for event in events:
+       async for event in m.next_events():
             assert event.name == "abcXXd"
 
     async def main():
@@ -170,8 +166,6 @@ def test_filters(tmpdir):
 
 
     curio.run(main())
-
-
 
 def test_remove(tmpdir):
     s = str(tmpdir)
@@ -196,7 +190,7 @@ def test_remove(tmpdir):
 
     async def do_watch():
         try:
-            async for events in m:
+            async for event in m:
                 delpath()
         except NoMoreWatches:
             return
@@ -209,5 +203,3 @@ def test_remove(tmpdir):
     with pytest.raises(ValueError):
         m.remove_watch(wd)
     assert not m._watches
-
-

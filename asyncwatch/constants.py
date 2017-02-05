@@ -1,5 +1,7 @@
 import enum
 
+#TODO: Should everything be enum?
+
 class EVENTS(enum.IntEnum):
     ACCESS =0x00000001;
     MODIFY =0x00000002;
@@ -51,3 +53,5 @@ class RETURN_FLAGS(enum.IntEnum):
     Q_OVERFLOW = 0x00004000
     IGNORED = 0x00008000
     ISDIR = 0x40000000
+
+EVENT_TYPES = REAL_EVENTS + (RETURN_FLAGS.UNMOUNT, RETURN_FLAGS.IGNORED)

@@ -6,95 +6,41 @@ Created on Sun Jun 26 18:34:29 2016
 
 @author: Zahari Kassabov
 """
+from __future__ import generator_stop
 import errno
-import struct
 from collections import Sequence, namedtuple
-from functools import reduce
-import operator
 import fnmatch
-import pathlib
+import os
+import operator
+from functools import reduce
 
-import curio
 from curio import io
 
 from .inotify import lib as C
 from .inotify import ffi
 from . import exceptions
 from . import constants
+from .inotifyprotocol import unpack_inotify_events
+
+__all__ = ('Monitor', 'watch')
 
 def errno_code():
     return errno.errorcode[ffi.errno]
 
+WatchSpec =  namedtuple('WatchSpec', ('name', 'mask', 'filter'))
 
-
-fields = ('wd', 'i'), ('mask', 'I'), ('cookie', 'I'), ('len', 'I')
-name = ('name', 's')
-fmt = ''.join(field[1] for field in fields)
-evt_head_size = struct.calcsize(fmt)
 
 def _add_flags(flags):
     return reduce(operator.or_, flags)
 
 
-def unpack_inotify_events(buffer):
-    offset = 0
-    while True:
-        wd, mask, cookie, l = struct.unpack_from(fmt, buffer, offset=offset)
-        offset += evt_head_size
-        if l>0:
-            name = struct.unpack_from('%ds'%l, buffer, offset=offset)[0]
-            name = name[:name.index(b'\0')].decode()
-        else:
-            name = None
-        offset += l
-        yield Event(wd, mask, cookie, name)
-        if offset==len(buffer):
-            break
-        if offset > len(buffer):
-            raise ValueError("Corrupted inotify event")
-
-def parse_event_mask(mask):
-    if mask & constants.RETURN_FLAGS.Q_OVERFLOW:
-        raise OSError("inotify queue overflow")
-    if mask & constants.RETURN_FLAGS.ISDIR:
-        is_dir = True
-    else:
-        is_dir = False
-    tps = (*constants.REAL_EVENTS, constants.RETURN_FLAGS.UNMOUNT,
-            constants.RETURN_FLAGS.IGNORED)
-    try:
-        tp = next(evt for evt in tps if evt & mask)
-    except StopIteration as e:
-        tp = None
-    return tp, is_dir
-
-
-class Event:
-    def __init__(self, wd, mask, cookie, name):
-        self.wd = wd
-        self.mask = mask
-        self.cookie = cookie
-        self.name = name
-
-        tp, is_dir = parse_event_mask(mask)
-        self.tp = tp
-        self.is_dir = is_dir
-
-
-    def __str__(self):
-        return '%s: %s'% (self.tp, self.name if self.name else '.')
-
-    def __repr__(self):
-        return "<%s(tp=%r, name=%r)>" % (self.__class__.__qualname__,
-                self.tp, self.name)
-
-WatchSpec =  namedtuple('WatchSpec', ('name', 'mask', 'filter'))
-
 class Monitor:
+    """A monitor contains zero or more watches."""
     def __init__(self, error_empty=False):
         """...
         error_empty: If the watch count reaches 0 while waiting for
-        events, raise an exception.
+        events, raise an exception. This is useful to avoid accidental
+        deadlocks.
         """
         self._fd = C.inotify_init1(0)
         if self._fd < 0:
@@ -107,11 +53,18 @@ class Monitor:
         self.error_empty = error_empty
 
     async def next_events(self):
+        """Wait until there is at least one event passing the filters, and
+        yield all the received events,
+        from any of the active watches.
+        The events that do not match the filers
+        (and only if a filter is set for the watch) are dropped.
+        Yields at least one event.
+       """
         if self.error_empty and not self._watches:
             raise exceptions.NoMoreWatches()
         data = await self.stream.read()
         events = unpack_inotify_events(data)
-        forward_events = []
+        yield_one = False
         for event in events:
             if event.tp == constants.RETURN_FLAGS.IGNORED:
                 self._watches.pop(event.wd, None)
@@ -122,24 +75,28 @@ class Monitor:
                      not fnmatch.fnmatch(event.name, watch.filter))
                     ):
                     continue
+                yield event
+                yield_one = True
 
-            forward_events.append(event)
-        if not forward_events:
-            forward_events = await self.next_events()
-        return forward_events
+        #No event passes the filters so we fetch more
+        if not yield_one:
+            async for event in self.next_events():
+                yield event
+
+    async def _loop(self):
+        while True:
+            async for evt in self.next_events():
+                yield evt
 
     async def __aenter__(self):
-        return await self.next_events()
+        async for e in self.next_events():
+            return e
 
     async def __aexit__(self, *exc_info):
         await self.stream.close()
 
     def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        return await self.next_events()
-
+        return  self._loop()
 
     def add_watch(self, filename, events, *, exclude_unlink=False,
                   follow_symlinks=True,
@@ -148,6 +105,15 @@ class Monitor:
         """Watch the filename for the given events. The defaults differ from
         inotify in that if a filename is already being watched, this call will
         add the new events instead of replacing them.
+
+        events can be either an integer representing the mask passed to
+        ``inotify_add_watch`` or a sequence of Constants.Events.
+
+        ``exclude_unlink`, ``follow_symlinks`` and ``oneshot`` set the
+        corrsponding flags to be appended to the mask.
+
+        ``filter`` is a glob mask. If set onle the events with `name` matching
+        the filter will be forwarded, and the rest will be droped.
         """
         if isinstance(events, Sequence):
             mask = _add_flags(events)
@@ -163,17 +129,12 @@ class Monitor:
             mask |= constants.WATCH_FLAGS.ONESHOT
         if not replace_existing:
             mask |= constants.WATCH_FLAGS.MASK_ADD
-        if isinstance(filename, str):
-           filename = filename.encode()
-        #TODO: Use new path protocol when available
-        elif isinstance(filename, pathlib.Path):
-            filename = str(filename).encode()
-        elif not isinstance(filename, bytes):
-            raise TypeError("Unrecognized format for filename")
-        wd = C.inotify_add_watch(self._fd, filename, mask)
+
+        wd = C.inotify_add_watch(self._fd, os.fsencode(filename), mask)
         if wd == -1:
-            raise OSError("Could not add watch. Error: %s"%
-                    errno_code())
+            raise exceptions.InotifyError(
+                f"Could not add watch. Error: {errno_code()}."
+            )
         watch_spec = WatchSpec(filename, mask, filter)
         self._watches[wd] = watch_spec
         return wd
@@ -183,9 +144,9 @@ class Monitor:
             raise ValueError("Invalid watch descriptor")
         val = C.inotify_rm_watch(self._fd, wd)
         if val != 0:
-            raise OSError("Could not remove watch. Error: %s"
-                    % errno_code()
-                )
+            raise exceptions.InotifyError(
+                f"Could not remove watch. Error: {errno_code()}."
+            )
         del self._watches[wd]
 
     def active_watches(self):
@@ -199,7 +160,10 @@ class Monitor:
         self.close()
 
 
-def watch(*args, **kwargs):
+def watch(*args, **kwargs) -> Monitor:
+    """Convenience method to start a :class:`Monitor` with one wtcher.
+    The arguments are passed to the :attr:`Monitor.add_watch` method.
+    The monitor is started with the ``error_empty`` flag set."""
     m = Monitor(error_empty=True)
     m.add_watch(*args, **kwargs)
     return m

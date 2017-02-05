@@ -27,13 +27,12 @@ def unpack_inotify_events(buffer):
             name = name[:name.index(b'\0')].decode()
         else:
             name = None
-        offset += l
+
         yield Event(wd, mask, cookie, name)
 
+        offset += l
         if offset==len(buffer):
             break
-        if offset > len(buffer):
-            raise InotifyError("Corrupted inotify event")
 
 def parse_event_mask(mask):
     """Given the mask of the inotify envent, return a tuple tp, is_dir

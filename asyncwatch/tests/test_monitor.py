@@ -98,7 +98,7 @@ def test_symlinks(tmpdir):
             follow_symlinks=False)
     m2.add_watch(link, EVENTS.ALL_EVENTS)
     async def do_watch_m1():
-        async with m1:
+        async with m1: # pragma: no cover
             raise RuntimeError()
 
     async def do_watch_m2(t):
@@ -161,6 +161,8 @@ def test_filters(tmpdir):
         (p/"xyz").touch()
         #Cover the case where all the first events are filtered out
         t = await curio.spawn(do_watch())
+        (p/'XXX').touch()
+        await curio.sleep(0)
         (p/"abcXXd").touch()
         await t.join()
 

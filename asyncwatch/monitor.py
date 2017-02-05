@@ -156,11 +156,8 @@ class Monitor:
     def close(self):
         self._buffer.close()
 
-    def __del__(self):
-        self.close()
 
-
-def watch(*args, **kwargs) -> Monitor:
+def watch(*args, **kwargs):
     """Convenience method to start a :class:`Monitor` with one wtcher.
     The arguments are passed to the :attr:`Monitor.add_watch` method.
     The monitor is started with the ``error_empty`` flag set."""

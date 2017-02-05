@@ -1,9 +1,12 @@
 package:
     name: asyncwatch
-    version: "{{ environ.get('GIT_DESCRIBE_TAG', '')[1:] }}.{{ environ.get('GIT_DESCRIBE_NUMBER', 0) }}"
+    version: "{{ GIT_DESCRIBE_TAG[1:] }}.{{ GIT_DESCRIBE_NUMBER }}"
 
 source:
     git_url: ../
+
+build:
+    skip: True # [not py36]
 
 requirements:
     build:

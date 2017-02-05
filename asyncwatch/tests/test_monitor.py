@@ -44,7 +44,6 @@ def test_context(tmpdir):
     async def main():
         t = await curio.spawn(do_watch())
         np = await touch(tmpdir)
-        #Ugly!
         Path(np).unlink()
         await t.join()
 
@@ -79,6 +78,7 @@ def test_several(tmpdir):
         async for event in m.next_events():
             assert event.name == 'xxx'
             assert event.is_dir
+            assert str(event) in ('CREATE: xxx', 'ACCESS: xxx')
     curio.run(main())
 
 def test_symlinks(tmpdir):

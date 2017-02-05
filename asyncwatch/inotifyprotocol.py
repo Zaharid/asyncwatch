@@ -75,4 +75,4 @@ class Event:
         self.is_dir = is_dir
 
     def __str__(self):
-        return f'{str(self.tp)}: {self.name if self.name else None}'
+        return f'{self.tp.name}: {self.name if self.name else "."}'

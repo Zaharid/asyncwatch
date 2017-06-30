@@ -42,7 +42,11 @@ class Monitor:
         events, raise an exception. This is useful to avoid accidental
         deadlocks.
         """
-        self._fd = C.inotify_init1(os.O_CLOEXEC)
+        #The python in conda fails for thos and it is not important
+        #enough to care about it that much.
+        #self._fd = C.inotify_init1(os.O_CLOEXEC)
+        self._fd = C.inotify_init1(0)
+
         if self._fd < 0:
             raise OSError(f"Could not initialize inotify: error {errno_code()}")
         self._buffer = open(self._fd, 'rb')

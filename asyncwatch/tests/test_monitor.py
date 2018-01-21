@@ -7,6 +7,10 @@ import curio
 from asyncwatch import Monitor, watch, EVENTS, NoMoreWatches
 
 
+@pytest.fixture
+def tmp(tmpdir):
+    return Path(tmpdir)
+
 async def touch(p):
     new_path = p/'xxx'
     async with curio.aopen(new_path, 'a'):
@@ -14,8 +18,8 @@ async def touch(p):
     return new_path
 
 
-def test_iter(tmpdir):
-    p = Path(tmpdir)
+def test_iter(tmp):
+    p = tmp
     async def do_watch():
         count = 0
         async for event in  watch(p, EVENTS.CLOSE):
@@ -33,9 +37,9 @@ def test_iter(tmpdir):
     curio.run(main())
 
 
-def test_context(tmpdir):
+def test_context(tmp):
     async def do_watch():
-        monitor = watch(str(tmpdir), EVENTS.DELETE, oneshot=True)
+        monitor = watch(tmp, EVENTS.DELETE, oneshot=True)
         async with monitor as event:
             assert event.tp ==  EVENTS.DELETE
         with pytest.raises(OSError):
@@ -43,7 +47,7 @@ def test_context(tmpdir):
 
     async def main():
         t = await curio.spawn(do_watch())
-        np = await touch(tmpdir)
+        np = await touch(tmp)
         Path(np).unlink()
         await t.join()
 
@@ -81,10 +85,10 @@ def test_several(tmpdir):
             assert str(event) in ('CREATE: xxx', 'ACCESS: xxx')
     curio.run(main())
 
-def test_symlinks(tmpdir):
+def test_symlinks(tmp):
     m1 = Monitor()
     m2 = Monitor()
-    root_path = Path(tmpdir)
+    root_path = tmp
 
     watch_path = root_path / 'dir'
     watch_path.mkdir()
@@ -119,16 +123,16 @@ def test_symlinks(tmpdir):
 
     curio.run(main(), with_monitor=True)
 
-def test_interface(tmpdir):
+def test_interface(tmp):
     m = Monitor()
     with pytest.raises(TypeError):
-        m.add_watch(tmpdir, "xxxx")
+        m.add_watch(tmp, "xxxx")
     with pytest.raises(TypeError):
         m.add_watch(1234, 0)
-    p = Path(tmpdir)
+    p = tmp
     m.add_watch(p, 1)
-    m.add_watch(tmpdir, EVENTS.CREATE)
-    m.add_watch(tmpdir, EVENTS.DELETE_SELF,
+    m.add_watch(tmp, EVENTS.CREATE)
+    m.add_watch(tmp, EVENTS.DELETE_SELF,
             replace_existing=True)
     async def do_watch():
         async for event in m.next_events():
@@ -144,10 +148,9 @@ def test_interface(tmpdir):
         await t.join()
     curio.run(main())
 
-def test_filters(tmpdir):
-    s = str(tmpdir)
-    p = Path(s)
-    m = watch(s, EVENTS.ALL_EVENTS, filter="abc*d")
+def test_filters(tmp):
+    p = tmp
+    m = watch(p, EVENTS.ALL_EVENTS, filter="abc*d")
     async def do_watch():
        async for event in m.next_events():
             assert event.name == "abcXXd"
@@ -169,9 +172,8 @@ def test_filters(tmpdir):
 
     curio.run(main())
 
-def test_remove(tmpdir):
-    s = str(tmpdir)
-    p = Path(s)
+def test_remove(tmp):
+    p = tmp
     subpaths = []
     m = Monitor(error_empty=True)
     for i in '1234':

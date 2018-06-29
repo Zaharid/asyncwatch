@@ -5,11 +5,8 @@ import pytest
 import curio
 
 from asyncwatch import Monitor, watch, EVENTS, NoMoreWatches
+from asyncwatch.tests.utils import tmp
 
-
-@pytest.fixture
-def tmp(tmpdir):
-    return Path(tmpdir)
 
 async def touch(p):
     new_path = p/'xxx'

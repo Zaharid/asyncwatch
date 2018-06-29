@@ -1,10 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Moonitor to watch inotify events
-
-Created on Sun Jun 26 18:34:29 2016
-
-@author: Zahari Kassabov
 """
 from __future__ import generator_stop
 import errno
@@ -13,6 +9,7 @@ import fnmatch
 import os
 import operator
 from functools import reduce
+import pathlib
 
 from curio import io
 
@@ -158,6 +155,13 @@ class Monitor:
 
     def close(self):
         self._buffer.close()
+
+    def get_path(self, event):
+        if event.name is None:
+            raise AsyncWatchErrror("Event has no path")
+        watch = self._watches[event.wd]
+        return pathlib.Path(watch.name) / event.name
+
 
 
 def watch(*args, **kwargs):
